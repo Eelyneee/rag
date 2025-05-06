@@ -23,10 +23,13 @@ This project is a **Retrieval-Augmented Generation (RAG)** chatbot that answers 
 | Language         | Python                      |
 
 ## 📂 File Structure
+```
+hdb-resale-rag
 ├── app.py # Main Streamlit app
 ├── resale_index.faiss # Saved FAISS index (auto-generated)
 ├── resale_chunks.pkl # Saved text chunks (auto-generated)
-├── Resaleflatpricesfrom2024.csv # Your resale data (uploaded through UI)
+├── Resaleflatpricesfrom2024.csv # Resale data (uploaded through UI)
+```
 
 ## 📦 Setup Instructions
 
