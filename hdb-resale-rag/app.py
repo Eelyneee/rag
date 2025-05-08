@@ -5,22 +5,49 @@ import numpy as np
 import pickle
 import subprocess
 import streamlit as st
+import pymupdf 
+import docx
 
 ## Step 1 - Load and convert to chunk
 csv_path="Resaleflatpricesfrom2024.csv"
 
-def load_and_chunk_csv(csv_path):
-    df = pd.read_csv(csv_path)
-    def row_to_text(row):
-        return (
+def load_and_chunk_csvs(csv_files):
+    all_chunks = []
+    for uploaded_file in csv_files:
+        df = pd.read_csv(uploaded_file)
+        chunks = df.apply(lambda row: (
             f"Month: {row['month']}, Town: {row['town']}, Flat type: {row['flat_type']}, "
             f"Block: {row['block']}, Street: {row['street_name']}, Storey range: {row['storey_range']}, "
             f"Floor area: {row['floor_area_sqm']} sqm, Flat model: {row['flat_model']}, "
             f"Lease start: {row['lease_commence_date']}, Remaining lease: {row['remaining_lease']}, "
-            f"Resale price: ${row['resale_price']}"
-        )
-    return df.apply(row_to_text, axis=1).tolist()
+            f"Resale price: ${row['resale_price']}"), axis=1).tolist()
+        all_chunks.extend(chunks)
+    return all_chunks
     #  -- Month: 2024-02, Town: ANG MO KIO, Flat type: 2 ROOM, Block: 406, Street: ANG MO KIO AVE 10, Storey range: 01 TO 03, Floor area: 44.0 sqm, Flat model: Improved, Lease start: 1979, Remaining lease: 54 years 4 months, Resale price: $285000
+
+def extract_text_from_pdf(file):
+    text = ""
+    with pymupdf.open(stream=file.read(), filetype="pdf") as doc:
+        for page in doc:
+            text += page.get_text()
+    return text
+
+def extract_text_from_docx(file):
+    doc = docx.Document(file)
+    return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+
+def load_and_chunk_other_docs(files):
+    all_chunks = []
+    for f in files:
+        if f.name.endswith(".pdf"):
+            text = extract_text_from_pdf(f)
+        elif f.name.endswith(".docx"):
+            text = extract_text_from_docx(f)
+        else:
+            continue
+        paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) > 30]
+        all_chunks.extend(paragraphs)
+    return all_chunks
 
 ## Step 2 - Embedding Text Chunks
 def generate_embeddings(chunks, model_name='all-MiniLM-L6-v2'):
@@ -72,7 +99,7 @@ def call_ollama(prompt, model_name="llama2"):
 
 def run_rag_chatbot(csv_path, question, model_name="llama2"):
     print("📦 Loading and chunking data...")
-    chunks = load_and_chunk_csv(csv_path)
+    chunks = load_and_chunk_csvs(csv_path)
 
     print("🧠 Generating embeddings...")
     embeddings, embedder = generate_embeddings(chunks)
@@ -97,15 +124,19 @@ def run_rag_chatbot(csv_path, question, model_name="llama2"):
 # ------------------ Streamlit UI ------------------ #
 st.title("🏠 HDB Resale Flat RAG Chatbot")
 
-uploaded_file = st.file_uploader("Upload your resale_flat_prices.csv file", type=["csv"])
+uploaded_csvs = st.file_uploader("Upload CSV files", type=["csv"], accept_multiple_files=True)
+uploaded_docs = st.file_uploader("Upload PDF or DOCX documents", type=["pdf", "docx"], accept_multiple_files=True)
 
-if uploaded_file:
-    question = st.text_input("Ask a question about the HDB resale data:",
+if uploaded_csvs or uploaded_docs:
+    question = st.text_input("Ask a question about your uploaded documents:",
                              placeholder="e.g. What are the resale prices for 2-room flats in Ang Mo Kio?")
 
     if question:
         with st.spinner("Processing your question..."):
-            chunks = load_and_chunk_csv(uploaded_file)
+            csv_chunks = load_and_chunk_csvs(uploaded_csvs) if uploaded_csvs else []
+            doc_chunks = load_and_chunk_other_docs(uploaded_docs) if uploaded_docs else []
+            chunks = csv_chunks + doc_chunks
+
             embeddings, embedder = generate_embeddings(chunks)
             create_faiss_index(embeddings, chunks)
             index, chunks_loaded = load_faiss_and_chunks()
